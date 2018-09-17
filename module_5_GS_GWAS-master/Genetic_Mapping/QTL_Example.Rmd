@@ -1,0 +1,131 @@
+---
+title: "R/qtl Mapping"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Objective
+
+Use the example data set with R/qtl package to generate a QTL map.  Data from R/qtl package and code from [http://www.rqtl.org/tutorials/rqtltour.R](http://www.rqtl.org/tutorials/rqtltour.R).
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Genetic_Mapping/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Genetic_Mapping/')
+options(digits = 10) #set options to include lots of digits
+#Git link
+##https://github.com/jcrain1/BecA
+```
+
+
+```{r qtl_map}
+require(qtl)
+data(hyper) #laod the hpertension data
+
+#R/qtl functions to check data
+summary(hyper) #check the data object
+
+#R/QTL functions to understand the data
+nind(hyper) #prints the number of individuals
+nphe(hyper) #prints the number of phenotypes
+nchr(hyper) #prints the number of chromosomes
+totmar(hyper) #prints the total number of markers
+nmar(hyper) #prints the number of markers on each linkage/chromosome
+
+#R/qtl functions to view data
+plot(hyper) #plot function that displays makrers, genetic map etc.
+
+plotMissing(hyper) #plots marker data
+plotMap(hyper) #plots the genetic map
+plotPheno(hyper, pheno.col=1) #plots the phenotype histogram
+
+plotMap(hyper, chr=c(1, 4, 6, 7, 15), show.marker.names=TRUE) #plot individual chromosomes withmarker names
+
+plotMissing(hyper, reorder = 1) #reorders data to value of phenotype in column 1, bp
+
+
+#R/qtl function to filter data
+hyper <- drop.nullmarkers(hyper) #drops marker from chorosome 14 that was missing in all individuals
+nmar(hyper) #prints the number of markers on each linkage/chromosome
+totmar(hyper) #total number of markers
+
+#R/qtl function for genetic map construction and evaluation
+hyper <- est.rf(hyper) #estimate pairwise recombination rate
+plotRF(hyper, what = 'both') #plot recombination fractions
+plotRF(hyper, chr=c(1,4)) #plot recombination frequency of chromosome 1 and 4
+
+#Re estimate marker positions.  Keeps marker order the same but recalculates genetic distance
+newmap <- est.map(hyper, error.prob=0.01) #make a new map ordered chromosomes
+plotMap(hyper, newmap) #plots the new and old map showing chromosome expansion
+
+hyper <- replace.map(hyper, newmap) #change map to new map
+
+
+#look for potential genotyping errors
+hyper <- calc.errorlod(hyper, error.prob=0.01) #calculates potential error score for each individual at each marker.  High value may indicate genotyping error
+
+top.errorlod(hyper) #prints out top potential error scores, ie incorectly scored genotypes
+
+plotGeno(hyper, chr=16, ind=c(24:34, 71:81)) #plot potential genotyping errors for chromosome 16 individuals 24-34 and 71-81.
+
+
+#QTL Mapping
+hyper <- calc.genoprob(hyper, step=1, error.prob=0.01) #calculate genotype probabilities, with a step size of 1 cM
+
+out.em <- scanone(hyper) #run SIM qtl mapping using EM expectation maximization method
+out.hk <- scanone(hyper, method="hk") #run SIM qtl mapping with Hayley-Knott regression
+
+hyper <- sim.geno(hyper, step=2, n.draws=16, error.prob=0.01) #simulate joint genotype distribution to use in multiple imputaiton method
+out.imp <- scanone(hyper, method="imp") #run multipel imputation method
+
+plot(out.em) #plots QTL map
+plot(out.hk, add = TRUE, col = 'red') #adds Hayley-Knott regression
+plot(out.imp, add = TRUE, col = 'blue')
+
+#Look at output for different models
+summary(out.em, threshold=3) #prints out summary for markers above LOD 3
+summary(out.hk, threshold=3)
+summary(out.imp, threshold=3)
+
+max(out.em) #returns highest peak for EM
+max(out.hk)
+max(out.imp)
+
+#Significance level
+#permutation test
+operm.hk <- scanone(hyper, method="hk", n.perm=1000) #permute data 1000 times
+
+summary(operm.hk, alpha=0.05) #get level for 0.05
+
+summary(out.hk, perms=operm.hk, alpha=0.05, pvalues=TRUE) #print p-value for markers above threshold
+
+
+#Composite interval mapping CIM
+cim_out <- cim(hyper, pheno.col = 1, n.marcovar = 5, window = 10,
+    method = 'hk', imp.method = 'imp', error.prob = 0.0001, map.function = 'haldane') #make a composite interval map
+#n.marcovar is the number of marker covariates to use
+#window size in cM
+#error.prob genotyping error probability rate
+#method model for cim
+#imp.method method to impute missing date
+
+#run permuation on CIM
+operm.hk <- cim(hyper,pheno.col = 1, n.marcovar = 5, window = 10,
+    method = 'hk', imp.method = 'imp', error.prob = 0.0001, map.function = 'haldane', n.perm=1000) #permute data 1000 times
+
+summary(operm.hk, alpha=0.05) #get level for 0.05
+
+summary(cim_out, perms=operm.hk, alpha=0.05, pvalues=TRUE) #print p-value for markers above threshold
+
+plot(cim_out) #plot the Composite interval map
+abline(h = 3.44, col = 'red')
+
+```
+
+#Session Information
+
+```{r sessionInformation}
+sessionInfo()
+```

@@ -1,0 +1,184 @@
+---
+title: "GWAS Maize"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+#Objective
+
+Implement a GWAS on maize data from the GAPIT (another software to implement GWAS) tutorial data.  "The analysis was performed with compressed mixed linear model (Zhang et al., 2010) implemented in the GAPIT R package (Lipka et al., 2012)."
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Tour_GWAS/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Tour_GWAS/')
+options(digits = 10) #set options to include lots of digits
+source('./scripts/Functions.r')
+#Git link
+#https://github.com/jcrain1/BecA
+
+#check the number of cores for computing
+require(parallel)
+detectCores()
+```
+
+```{r load_genotype}
+require(rrBLUP)
+#Load the hap map file
+hap <- read.delim(file = './data/Original_Data/GAPIT_Hapmap.hmp.txt', header = TRUE, stringsAsFactors = FALSE, check.names = FALSE) #read the genotype file
+
+#check data
+str(hap)
+
+hap <- tassel5_to_params(hap, y = 11, z = 281) #get population parameters
+
+#graph
+hist(hap$present)
+hist(hap$present, main = 'Percent present for each SNP', xlab = 'Percent Present')
+hist(hap$MAF, main = 'Minor Allele Frequency', xlab = 'Minor allele frequency', ylab = 'Number of individuals')
+hist(hap$percentHET)
+hist(hap$percentHET, main = 'Percent Heterozygozity', xlab = 'Percent of loci heterozygous')
+
+#Filter on parameters
+hap <- hap[hap$MAF > 0.05, ] #greater than 0.05 MAF
+
+```
+
+```{r phenotype_cleaning}
+phen <- read.table(file = './data/Original_Data/GAPIT_Phenotype.txt', header = TRUE, stringsAsFactors = FALSE)
+
+str(phen)
+
+phen <- phen[phen$Taxa %in% colnames(hap), ] #get phenotypes with genotype
+
+#get genotypes that have phenotypes
+individuals <- colnames(hap)[colnames(hap) %in% phen$Taxa] #get individuals to select
+info_columns <- colnames(hap)[1:17] #get columns of information
+hap <- hap[,c(info_columns, individuals)] #remove individuals from hap that do not have phenotype data
+dim(hap) #check dimensions should be 279 individuals + 17 columns
+
+```
+
+```{r make_realized relationship_matrix}
+#convert to -1, 0, 1 matrix
+geno <- hap_to_G(hap, y = 17)
+dim(geno) #check output
+
+#prepare only marker matrix
+rownames(geno) <- geno$`rs#` #set row names
+
+#extract a map file for later
+map <- geno[, c('rs#', 'chrom', 'pos')] #snp, chromosome and position
+
+geno_for_Gmatrix <- t(geno[,18:ncol(geno)]) #make a matrix to get realized relationship matrix.  rrBLUP wants individual rows and columns of markers for this
+
+#make genomic realized relationship matrix (kinship matrix)
+gmat <- A.mat(geno_for_Gmatrix) #make realized relationship matrix
+dim(gmat) #check dimensions should be 281 x 281
+
+markers <- geno[,c(1, 3, 4, 18:ncol(geno))] #get markers for GWAS.  Markers enter this formula as rows and individuals as columns
+    
+  
+```
+
+
+```{r population structure}
+require(factoextra)
+#Population Structure
+#first must impute missing data (use mean imputation)
+imputed_markers <- A.mat(markers[, 4:ncol(markers)], impute.method = 'mean', min.MAF = 0.05, return.imputed = TRUE )$imputed 
+
+geno_pca <- prcomp(t(imputed_markers), scale. = TRUE) #enter markers in PCA as rows of individuals, columns of markers
+fviz_eig(geno_pca) #scree plot with factoextra
+
+##Evaluate number of PC to choose look at variance explained by each PC
+std_dev <- geno_pca$sdev #extract standard deviation of each pC
+
+#compute variance
+pr_var <- std_dev^2 #compute variance std*std
+prop_varex <- pr_var/sum(pr_var) #proportion of variance explained
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+plot(cumsum(prop_varex[1:10]), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+screeplot(geno_pca, npcs = 100, type = 'line') #screeplot of all PC
+
+#Factors often choose by percent of variance explained, top X factors.  Somewhat arbitrary, but it looks like the top 3 should be a good starting point
+
+```
+
+```{r gwas_finally}
+#check markers, realized relationship matrix, and phenotypes are in order
+all(colnames(imputed_markers) == rownames(gmat))
+all(rownames(gmat) == phen$Taxa) #need to order phenotype file
+
+phen <- phen[match(rownames(gmat), phen$Taxa), ] #order phenotype data
+all(rownames(gmat) == phen$Taxa) #ordered
+
+#add map info to imputed_markers
+imputed_markers <- cbind(map, imputed_markers)
+
+rrout <- GWAS(phen[, 1:4], geno = imputed_markers, K=gmat, min.MAF = 0.05, n.core=3, plot = TRUE, n.PC = 3)  #run with principal components
+
+max(rrout$EarHT)
+max(rrout$dpoll)
+max(rrout$EarDia)
+
+#Excessive PCs
+rrout_many_pc <- GWAS(phen[, 1:4], geno = imputed_markers, K=gmat, min.MAF = 0.05, n.core=3, plot = TRUE, n.PC = 100)  #run with principal components
+
+max(rrout_many_pc$EarHT)
+max(rrout_many_pc$dpoll)
+max(rrout_many_pc$EarDia)
+
+#Bad example!!!!!!
+rrout_bad <- GWAS(phen[, 1:4], geno = imputed_markers, K=gmat, min.MAF = 0.05, n.core=3, plot = TRUE) #run with no population structure ERROR
+
+max(rrout_bad$EarHT)
+max(rrout_bad$dpoll)
+max(rrout_bad$EarDia)
+```
+
+#How to check significance level
+Permutation tests, randomly shuffling the phenotype data can be used to determine how likely a set of data is.  Shuffle phenotype data run model and collect the result for 1000 or more times.  If the calculated result is in the top 50 results that would be p < 0.05.
+
+```{r permutation_test}
+
+gwas_perm_result <- NULL #start a dataframe to store results
+
+for(i in 1:1000){ #do 1000 iterations
+  print(i) #to know where the loop is 
+  phen_shuffle <- sample(1:nrow(phen), size = max(nrow(phen)), replace = FALSE) #get a random sample order
+  phen_names <- phen$Taxa #get original names
+  phen_shuffle <- phen[phen_shuffle, ] #shuffle phenotypes
+  phen_shuffle$Taxa <- phen_names #shuffle names
+  
+  #set up model
+  rrout <- GWAS(phen_shuffle[, 1:2], geno = imputed_markers, K=gmat, min.MAF = 0.05, n.core=3, plot = FALSE, n.PC = 3)  #run with principal components
+  
+  max_value <- max(rrout$EarHT) #extract largest marker effect
+  
+  gwas_perm_result <- rbind(gwas_perm_result, max_value) #save data outside the loop
+  
+}
+
+#Evaluate results
+hist(gwas_perm_result, main = '1000 permutations', xlab = 'Most Significant Value', sub = 'Vertical line is GWAS result')
+abline(v = max(rrout$EarHT))
+
+gwas_perm_result <- gwas_perm_result[order(-gwas_perm_result)] #order result
+gwas_perm_result[50] #print out 5% (p < 0.05)
+max(rrout$EarHT)
+
+```
+
+#Session Information
+```{r sessionInformation}
+sessionInfo()
+```

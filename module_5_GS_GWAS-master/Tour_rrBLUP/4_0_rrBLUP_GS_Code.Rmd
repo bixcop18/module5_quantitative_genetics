@@ -1,0 +1,149 @@
+---
+title: "rrBLUP Notes"
+author: "Jared Crain"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Objective
+
+Use sample data and scripts from TCAP webinar to learn rrBLUP.  Based on presentation by Amy Jacobson December 18, 2012.
+
+```{r setup, eval=TRUE}
+#set up working direcotories
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Tour_rrBLUP/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Tour_rrBLUP/')
+options(digits = 10) #set options to include lots of digits
+#Git link
+#
+
+require(rrBLUP)
+```
+
+```{r load_data, eval=TRUE}
+#load marker data
+marker <- read.table(file = './data/Original_Data/rrBLUP_Example_SNP.txt', header = FALSE) #load marker data
+
+#add column and row names
+colnames(marker) <- paste("Marker_", 1:ncol(marker), sep = '') #add marker column name
+rownames(marker) <- paste("Plant_", 1:nrow(marker), sep = "") #add plant name
+
+#load phenotypic data
+phen <- read.table(file = './data/Original_Data/rrBLUP_Example_Traits.txt', header = TRUE) #load phenotypic data
+
+dim(phen)
+```
+
+```{r evaluate_original data}
+#check data formats for markers and phenotypes
+str(marker)
+str(phen)
+
+#impute missing markers
+imputed <- A.mat(X = marker, max.missing = 0.5, return.imputed = TRUE, impute.method = 'mean') #imputes with the mean value and discards markers with more than 50% missing data
+
+#get imputed data frame
+imputed_marker <- imputed$imputed #get imputed markers
+dim(imputed_marker)
+
+```
+
+```{r implement GS}
+#set up training population of 58 individuals and prediction population
+
+#Training population
+#set up a model to look at data
+set.seed(123) #make it reproducible
+train <- sample(x = 1:nrow(marker), size = 58, replace = FALSE )
+pred <- setdiff(1:96, train) #get prediction population
+
+train_marker <- imputed_marker[train, ] #get markers in training set
+train_phen <- phen[train, ] #get phenotype in training population
+
+#prediction population
+predict_maker <- imputed_marker[pred, ] #get indivdual genotypes of prediction data set
+predict_phen <- phen[pred, ] #get indivdual phenotypes of prediction set
+
+
+#we have four sets of data
+#2 phenotype (training and prediction)
+#2 phenotypes (training and prediction)
+
+#run rrBLUP mixed.sovle
+yield_answer <- mixed.solve(y = train_phen[, 1], Z = train_marker, K = NULL, SE = FALSE, return.Hinv = FALSE) #mixed mode.
+
+#extract marker values
+marker_value <- yield_answer$u #extract marker values
+pop_mean <- yield_answer$beta #extract population mean
+
+#make predictions
+ gs_prediction <- predict_maker %*% marker_value
+
+gs_prediction <- gs_prediction + as.numeric(pop_mean)#adding mean to the population
+
+#check accuracy
+dev.new()
+pdf(file = './data/Figures/Plot_GS_Example.pdf', height = 6, width = 6)
+plot(predict_phen$grain_yield, gs_prediction, xlab = 'Observed', ylab = 'GS Prediction')
+dev.off()
+
+cor(predict_phen$grain_yield, gs_prediction)
+
+
+#set up multiple iterations
+
+#check final accuracy
+pred_out <- NULL #initialize object ot hold results
+
+for(i in 1:500){
+  ########## Copy from set.seed#########
+  train <- sample(x = 1:nrow(marker), size = 58, replace = FALSE )
+pred <- setdiff(1:96, train) #get prediction population
+
+train_marker <- imputed_marker[train, ] #get markers in training set
+train_phen <- phen[train, ] #get phenotype in training population
+
+#prediction population
+predict_maker <- imputed_marker[pred, ] #get indivdual genotypes of prediction data set
+predict_phen <- phen[pred, ] #get indivdual phenotypes of prediction set
+
+
+#we have four sets of data
+#2 phenotype (training and prediction)
+#2 phenotypes (training and prediction)
+
+#run rrBLUP mixed.sovle
+yield_answer <- mixed.solve(y = train_phen[, 1], Z = train_marker, K = NULL, SE = FALSE, return.Hinv = FALSE) #mixed mode.
+
+#extract marker values
+marker_value <- yield_answer$u #extract marker values
+pop_mean <- yield_answer$beta #extract population mean
+
+#make predictions
+ gs_prediction <- predict_maker %*% marker_value
+
+gs_prediction <- gs_prediction + as.numeric(pop_mean)#adding mean to the population
+
+#########save correlation values and output#########
+
+correlation_value <- cor(predict_phen$grain_yield, gs_prediction) #store correlation value in a variable
+
+pred_out <- c(pred_out, correlation_value) #write the prediction outside of the loop
+
+}
+
+#Check the mean of the values
+mean(pred_out) #look at average value
+
+
+```
+
+
+#Session Information
+
+```{r sessionInformation}
+#recode session information
+sessionInfo()
+```

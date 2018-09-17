@@ -1,0 +1,81 @@
+#VCF tools to filter data
+
+#First load module
+module load vcftools/0.1.15
+
+#move to directory with vcf file
+#Using the rice_example.vcf file
+
+#Filter 1 to remove insertions and deletions
+vcftools --vcf rice_example.vcf --out rice_example_Filtered1 --remove-indels  --recode --recode-INFO-all
+
+#rename to remove recode
+mv rice_example_Filtered1.recode.vcf rice_example_Filtered1.vcf
+
+#Filter 2 to make sure that all calls have a minimum of 2 alleles and maximum of 2 alleles
+vcftools --vcf rice_example_Filtered1.vcf --out rice_example_Filtered2 --min-alleles 2  --max-alleles 2  --recode --recode-INFO-all
+
+#rename to remove recode
+mv rice_example_Filtered2.recode.vcf rice_example_Filtered2.vcf
+
+#Filter 3 Fileter on minor allele frequency
+vcftools --vcf rice_example_Filtered2.vcf --out rice_example_Filtered3 --maf 0.05  --recode --recode-INFO-all
+
+#rename to remove recode
+mv rice_example_Filtered3.recode.vcf rice_example_Filtered3.vcf
+
+#Filter 4 filter on minimum depth 2 calls per site
+vcftools --vcf rice_example_Filtered3.vcf --out rice_example_Filtered4 --minDP 2  --recode --recode-INFO-all
+
+#rename to remove recode
+mv rice_example_Filtered4.recode.vcf rice_example_Filtered4.vcf
+
+#Filter 5 filter on maximum missing data
+vcftools --vcf rice_example_Filtered4.vcf --out rice_example_Filtered5 --max-missing 0.3  --recode --recode-INFO-all
+
+#rename to remove recode
+mv rice_example_Filtered5.recode.vcf rice_example_Final.vcf
+
+/var/scratch/tassel_example/TASSEL_Software/tassel-5-standalone/run_pipeline.pl -vcf rice_example_Final.vcf -export Rice_Example_Final.hmp.txt -exportType Hapmap
+
+
+###########Now that we have seen filtering ############
+######## Join all command together ################
+vcftools --vcf rice_example.vcf --out Rice_Example_Filtered --remove-indels --min-alleles 2 --max-alleles 2 --maf 0.01 --minDP 2 --max-missing 0.3 --recode --recode-INFO-all
+
+####################Same as above but with shell/bash variable########
+###################For more flexible filtering use variable############
+vcf_file=rice_example_Filtered #set variabel
+
+#Filter 1 to remove insertions and deletions
+vcftools --vcf rice_example.vcf --out ${vcf_file}1 --remove-indels  --recode --recode-INFO-all
+
+#rename to remove recode
+mv ${vcf_file}1.recode.vcf ${vcf_file}1.vcf
+
+#Filter 2 to make sure that all calls have a minimum of 2 alleles and maximum of 2 alleles
+vcftools --vcf ${vcf_file}1.vcf --out ${vcf_file}2 --min-alleles 2  --max-alleles 2  --recode --recode-INFO-all
+
+#rename to remove recode
+mv ${vcf_file}2.recode.vcf ${vcf_file}2.vcf
+
+#Filter 3 Fileter on minor allele frequency
+vcftools --vcf ${vcf_file}2.vcf --out ${vcf_file}3 --maf 0.05  --recode --recode-INFO-all
+
+#rename to remove recode
+mv ${vcf_file}3.recode.vcf ${vcf_file}3.vcf
+
+#Filter 4 filter on minimum depth 2 calls per site
+vcftools --vcf ${vcf_file}3.vcf --out ${vcf_file}4 --minDP 2  --recode --recode-INFO-all
+
+#rename to remove recode
+mv ${vcf_file}4.recode.vcf ${vcf_file}4.vcf
+
+#Filter 5 filter on maximum missing data
+vcftools --vcf ${vcf_file}4.vcf --out ${vcf_file}5 --max-missing 0.3  --recode --recode-INFO-all
+
+#rename to remove recode
+mv ${vcf_file}5.recode.vcf rice_example_Final.vcf
+
+/var/scratch/tassel_example/TASSEL_Software/tassel-5-standalone/run_pipeline.pl -vcf rice_example_Final.vcf -export Rice_Example_Final.hmp.txt -exportType Hapmap
+

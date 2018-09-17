@@ -1,0 +1,191 @@
+---
+title: "Rice Genetic Map"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Objective
+
+Use the snythetic Opata double haploid population to make a genetic map using GBS markers.  Further look at simple interval mapping for QTL analysis.
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Rice_Genetic_Map/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Rice_Genetic_Map/')
+options(digits = 10) #set options to include lots of digits
+#Git link #not on git
+```
+
+```{r functions}
+#Functions
+  
+  ####Function to count alleles and populations parameters###
+tassel5_to_params=function(x="hap matrix", y="columns to skip", z="population number"){
+      geno=x
+      #recount allele A and B and het
+      alleleA=rowSums(geno[,(y+1):ncol(geno)]!=substring(geno$alleles, 3, 3) & geno[,(y+1):ncol(geno)]!="N") #only counts what is not allele B and missing.  i.e. counts allele A and various calls for heterozygous
+      alleleB=rowSums(geno[,(y+1):ncol(geno)]!=substring(geno$alleles, 1, 1) & geno[,(y+1):ncol(geno)]!="N")
+      het=rowSums(geno[,(y+1):ncol(geno)] == "M") + rowSums( geno[,(y+1):ncol(geno)] ==   "R") + rowSums(geno[,(y+1):ncol(geno)] ==  "W") + rowSums(geno[,(y+1):ncol(geno)] ==  "K") + rowSums(geno[,(y+1):ncol(geno)] ==  "S") + rowSums(geno[,(y+1):ncol(geno)] ==  "Y")
+      present=1-(rowSums(geno[,(y+1):ncol(geno)]=="N")/z)
+      MAF=apply(cbind(((alleleA-het)*2+het), (alleleB-het)*2+het), 1, min)/apply(
+    cbind(((alleleA-het)*2+het), ((alleleB-het)*2+het)), 1, sum) 
+      percentHet=het/apply(cbind(alleleA-het, alleleB-het, het), 1, sum)
+      return(cbind.data.frame(geno[,1:y], "alleleA"=alleleA, "alleleB"=alleleB, "het"=het, "present"= present, "MAF"=MAF, "percentHET"=percentHet, geno[,(y+1):ncol(geno)]))
+}
+
+##function to convert hap to 0 and 1
+hap_to_G=function(x="hap matrix", y="number of columns of information"){
+  ##From Prasana, pulls out first allele for a and second for b
+  a = substring(x$alleles,1,1)
+  #Checks the frequency of the alleles if the second allele is more frequent it is substitued
+  a[x$alleleA<x$alleleB] = substring(x$alleles,3,3)[x$alleleA<x$alleleB]
+  #Same thing with the second allele
+  b = substring(x$alleles,3,3)
+  b[x$alleleA<x$alleleB] = substring(x$alleles,1,1)[x$alleleA<x$alleleB]
+  #Checks to make sure all alleles are one or the other
+  #print(paste("If 0 all alleles are accounted for: ", sum(a == b), sep=""))
+  
+  ## Turn into letter matrix for mapping
+  #makes a copy of the hap matrix
+  hap01 = x
+  #sets all allele values to NA
+  hap01[,(y+1):ncol(hap01)]=NA
+  
+  ## Turn allele a and allele b into 1 and -1.  Het into 0
+  #line by line if a line is a then it places 1 in hap01 for the allele
+  hap01[x == a] = 1
+  hap01[x == b] = -1
+  hap01[x == "M"] = 0
+  hap01[x == "Y"] = 0
+  hap01[x == "K"] = 0
+  hap01[x == "R"] = 0
+  hap01[x == "W"] = 0
+  hap01[x == "S"] = 0
+  hap01[x== "N"]=NA
+  
+  return(hap01)}
+  
+
+
+```
+#Make Map
+Make genetic map using markers.
+
+```{r gbs_map}
+require(plyr)
+rice <- read.delim(file = './Data/Original_Data/rice_example.hmp.txt', header = TRUE, stringsAsFactors = FALSE, check.names = FALSE) #read in file
+
+rice <- rice[nchar(rice$alleles) == 3, ] #get only biallelic snps
+
+rice <- tassel5_to_params(rice, 11, 174) #get population parameters
+
+hist(rice$MAF, main = 'Rice MAF')
+hist(rice$present, main = 'Number of SNPs present')
+hist(rice$percentHET, main = 'Percent heterozygous')
+abline(v = mean(rice$percentHET))
+mean(rice$percentHET)
+
+#get only markers that are Biallelic and homozygous between parents
+rice <- rice[rice$IR64 %in% c('A', 'G', 'C', 'T') & rice$Azucena %in% c('A', 'G', 'C', 'T') , ]
+
+rice <- rice[rice$IR64 != rice$Azucena, ] #get contrasting markers
+
+hist(rice$MAF, main = 'Rice MAF')
+hist(rice$present, main = 'Number of SNPs present')
+
+rice <- rice[rice$present > 0.95 & rice$MAF > 0.45,] #filter
+hist(rice$MAF, main = 'Rice MAF')
+hist(rice$present, main = 'Number of SNPs present')
+
+
+#Make genetic map
+require(ASMap)
+
+#make A and B, A is IR64, B is Azucena
+ab_mat <- NULL #make an AB dataframe to hold results
+
+for(i in 1:nrow(rice)){
+  print(i)
+  single_row <- rice[i, ] #Process line by line
+  A <- single_row$IR64 #get allele for Opata
+  B <- single_row$Azucena #get allele for Synthetic
+  single_row[, 18:ncol(single_row)] <- gsub(A, 1, single_row[, 18:ncol(single_row)]) #Substitue for allele A 1
+  single_row[, 18:ncol(single_row)] <- gsub(B, 2, single_row[, 18:ncol(single_row)]) #substitue for allele B 2
+  single_row[, 18:ncol(single_row)] <- gsub('R', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  single_row[, 18:ncol(single_row)] <- gsub('Y', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  single_row[, 18:ncol(single_row)] <- gsub('S', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  single_row[, 18:ncol(single_row)] <- gsub('W', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  single_row[, 18:ncol(single_row)] <- gsub('K', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  single_row[, 18:ncol(single_row)] <- gsub('M', 3, single_row[, 18:ncol(single_row)]) #Substitue for heterozygous 
+  
+  single_row[, 18:ncol(single_row)] <- sapply(single_row[, 18:ncol(single_row)], as.numeric) #make numeric, turns all others into missing values
+  
+  single_row[, 18:ncol(single_row)] <- gsub(1, 'A', single_row[, 18:ncol(single_row)]) #convert from number to lettter
+  single_row[, 18:ncol(single_row)] <- gsub(2, 'B', single_row[, 18:ncol(single_row)])
+  single_row[, 18:ncol(single_row)] <- gsub(3, 'X', single_row[, 18:ncol(single_row)]) #substitue heterozygote
+
+  ab_mat <- rbind(ab_mat, single_row) #write out row
+
+  } #get warnings of NA introduced (by design in this case)
+
+#format for mapping
+rownames(ab_mat) <- ab_mat$rs #give rownames
+ab_mat <- ab_mat[, 19:ncol(ab_mat)] #select columns git rid of Nipponbare
+ab_mat[ab_mat == 'NA'] <- '-' #conver for ASMAP missing vlaues
+
+write.csv(ab_mat, file = './Data/Intermediate_File/Rice_Markers.csv', row.names = TRUE, quote = FALSE) #write out and read in to get the formatting
+
+#clean up
+rm( rice, single_row, A, B, i)
+
+#reload data
+map <- read.csv(file = './data/Intermediate_File/Rice_Markers.csv', header = TRUE, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+#make the genetic map
+map_out <- mstmap(map, pop.type = 'RIL5', dist.fun = 'kosambi', objective.fun = 'COUNT', p.value = 5e-12, noMap.dist = 35, noMap.size = 10, miss.thresh = 10) #play with parameters to make better map
+
+plotMap(map_out)
+pdf(file = './data/Figures/Rice_Linkage_Map.pdf', height = 6, width = 8)
+plotMap(map_out) #plot the genetic map
+dev.off()
+map_out$geno$L1$map #look at linkage groups
+map_out$geno$L2$map
+
+marker_map <- NULL #get a dataframe to hold map data
+
+for(i in 1:length(map_out$geno)){ #get map data
+  seg <- map_out$geno[[i]][[2]]
+  seg <- as.data.frame(seg)
+  seg$marker_name <- rownames(seg)
+  colnames(seg)[1] <- 'cM'
+  rownames(seg) <- NULL
+  seg$linkage_group <- i
+  seg <- seg[,c(2, 3, 1)]
+  marker_map <- rbind(marker_map, seg)
+
+}
+
+#format for ASMAP
+ab_mat$marker_name <- rownames(ab_mat)
+
+marker_out <- merge(marker_map, ab_mat, by = 'marker_name')
+
+marker_out <- marker_out[order(marker_out$linkage_group, marker_out$cM),] #order by linkage group and chromosome
+
+write.csv(marker_out, file = './data/Intermediate_File/Rice_Markers_Map.csv', row.names = FALSE, quote = FALSE) #write file out
+
+```
+
+#Confirm Map
+
+Extract tag positions using marker data, and BLAST the tags to the wheat genome.  See how many tags that are on the same linkage group relate to the reference genome.
+
+
+
+#Session Information
+
+```{r sessionInformation}
+sessionInfo()
+```

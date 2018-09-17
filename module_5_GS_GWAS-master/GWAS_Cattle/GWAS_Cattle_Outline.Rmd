@@ -1,0 +1,72 @@
+---
+title: "GWAS Cattle Outline"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+#Objective
+
+Implement a GWAS on the data from Streit et al. (2013) "Using Genome-Wide Association Analysis to Characterize Environmental Sensitivity of Milk Traits in Dairy Cattle."  The data sets we are using are a sample of the original data sets, 12,559,327 phenotypic observations and 41,350 genotypic markers.  The full data set can be downloaded from the G3 website.
+
+The marker set has already been imputed and filtered; however markers have 2, 3, 4 coding pattern.  This is a huge data set, therefore, first fit a GWAS to a sample set of markers.  Then load the entire data set and identify a specific chromosome to assay based on your original results.
+
+Sire is the individual name.
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '')
+setwd('')
+options(digits = 10) #set options to include lots of digits
+#Git link
+#https://github.com/jcrain1/BecA
+
+#check the number of cores for computing
+require(parallel)
+detectCores()
+```
+
+#Load Subset of Data
+```{r load_subset}
+
+```
+
+#Check Phenotype and Genotype
+
+Format for rrBLUP.
+```{r check_format}
+
+```
+
+#Check for Population Structure
+```{r population_structure}
+
+
+```
+
+#GWAS whole genome
+```{r gwas_whole_genome}
+
+
+```
+
+#Look at specific chromosome
+```{r get_specific_chromosome}
+
+
+```
+
+#Make GWAS on Chromosme ??
+```{r gwas??_QC}
+
+
+```
+
+#Further work
+
+Look at other traits, look at different number of principal componetns, and/or set up a GS model for protein. 
+
+#Session Information
+```{r sessionInfo}
+sessionInfo()
+```

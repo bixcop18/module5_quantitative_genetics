@@ -1,0 +1,78 @@
+---
+title: "rrBLUP Nots"
+author: "Jared Crain"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Objective
+
+Use sample data and scripts from TCAP webinar to learn rrBLUP.  Based on presentation by Amy Jacobson December 18, 2012.
+
+```{r setup, eval=TRUE}
+#set up working direcotories
+knitr::opts_knit$set(root.dir = '')
+setwd('')
+options(digits = 10) #set options to include lots of digits
+#Git link
+#
+
+require(rrBLUP)
+```
+
+```{r load_data, eval=FALSE}
+#load marker data
+
+#add column and row names
+
+#load phenotypic data
+
+```
+
+```{r evaluate_original data}
+#check data formats for markers and phenotypes
+
+
+#impute missing markers
+
+#get imputed data frame
+
+```
+
+```{r implement GS}
+#set up training population of 58 individuals and prediction population
+
+#Training population
+#set up a model to look at data
+set.seed(2017121112) #make it reproducible
+
+#we have four sets of data
+#2 phenotype (training and prediction)
+#2 phenotypes (training and prediction)
+
+#run rrBLUP mixed.sovle
+
+
+#extract marker values
+
+#make predictions
+
+#check accuracy
+
+
+#set up multiple iterations
+
+#check final accuracy
+
+
+
+```
+
+
+#Session Information
+
+```{r sessionInformation}
+#recode session information
+```

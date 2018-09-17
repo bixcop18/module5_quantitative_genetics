@@ -1,0 +1,155 @@
+---
+title: "SynOpDH Genetic Map"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Objective
+
+Use the snythetic Opata double haploid population to make a genetic map using GBS markers.  Further look at simple interval mapping for QTL analysis.
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Genetic_Mapping/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/Genetic_Mapping/')
+source('./scripts/Functions.r')
+options(digits = 10) #set options to include lots of digits
+#Git link
+##https://github.com/jcrain1/BecA
+```
+
+#Make Map
+Make genetic map using markers.
+
+```{r gbs_map}
+require(plyr)
+snop <- read.delim(file = './data/Original_Data/HapMap.hmp.txt', header = TRUE, stringsAsFactors = FALSE, check.names = FALSE) #read in file
+
+colnames(snop) <- gsub('_merged_X3', '', colnames(snop)) #remove merged_X3
+
+key <- read.table(file = './data/Original_Data/SynOpDH_UNEAK_Key.txt', header = TRUE)
+
+snop <- tassel5_to_params(snop, 11, 94) #get population parameters
+
+hist(snop$MAF, main = 'SNOP MAF')
+hist(snop$present, main = 'Number of SNPs present')
+
+#get only markers that are Biallelic and homozygous between parents
+snop <- snop[snop$OpataM85 %in% c('A', 'G', 'C', 'T') & snop$SyntheticW7984 %in% c('A', 'G', 'C', 'T') , ]
+
+snop <- snop[snop$OpataM85 != snop$SyntheticW7984, ] #get contrasting markers
+
+hist(snop$MAF, main = 'SNOP MAF')
+hist(snop$present, main = 'Number of SNPs present')
+
+snop <- snop[snop$present > 0.95 & snop$MAF > 0.45,] #filter
+hist(snop$MAF, main = 'SNOP MAF')
+hist(snop$present, main = 'Number of SNPs present')
+
+
+#Make genetic map
+require(ASMap)
+
+#make A and B, A is OpataM85, B is SyntheticW7984
+ab_mat <- NULL #make an AB dataframe to hold results
+
+for(i in 1:nrow(snop)){
+  print(i)
+  single_row <- snop[i, ] #Process line by line
+  A <- single_row$OpataM85 #get allele for Opata
+  B <- single_row$SyntheticW7984 #get allele for Synthetic
+  single_row[, 18:ncol(single_row)] <- gsub(A, 1, single_row[, 18:ncol(single_row)]) #Substitue for allele A 1
+  single_row[, 18:ncol(single_row)] <- gsub(B, 2, single_row[, 18:ncol(single_row)]) #substitue for allele B 2
+  single_row[, 18:ncol(single_row)] <- sapply(single_row[, 18:ncol(single_row)], as.numeric) #make numeric, turns all others into missing values
+  
+  single_row[, 18:ncol(single_row)] <- gsub(1, 'A', single_row[, 18:ncol(single_row)]) #convert from number to lettter
+  single_row[, 18:ncol(single_row)] <- gsub(2, 'B', single_row[, 18:ncol(single_row)])
+
+  ab_mat <- rbind(ab_mat, single_row) #write out row
+
+  } #get warnings of NA introduced (by design in this case)
+
+#format for mapping
+rownames(ab_mat) <- ab_mat$rs #give rownames
+ab_mat <- ab_mat[, 18:ncol(ab_mat)] #select rows
+ab_mat[ab_mat == 'NA'] <- '-' #conver for ASMAP missing vlaues
+
+write.csv(ab_mat, './data/Intermediate_File/SynOpDH_UNEAK_Markers.csv', row.names = TRUE, quote = FALSE) #write out and read in to get the formatting
+
+
+map <- read.csv(file = './data/Intermediate_File/SynOpDH_UNEAK_Markers.csv', header = TRUE, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+#make the genetic map
+map_out <- mstmap(map, pop.type = 'DH', dist.fun = 'kosambi', objective.fun = 'COUNT', p.value = 1e-06, noMap.dist = 25, noMap.size = 35, miss.thresh = 200) #play with parameters to make better map
+
+plot(map_out)
+pdf(file = './data/Figures/Linkage_Map.pdf', height = 6, width = 8)
+plotMap(map_out) #plot the genetic map
+dev.off()
+map_out$geno$L1$map #look at linkage groups
+map_out$geno$L2$map
+
+marker_map <- NULL #get a dataframe to hold map data
+
+for(i in 1:length(map_out$geno)){ #get map data
+  seg <- map_out$geno[[i]][[2]]
+  seg <- as.data.frame(seg)
+  seg$marker_name <- rownames(seg)
+  colnames(seg)[1] <- 'cM'
+  rownames(seg) <- NULL
+  seg$linkage_group <- i
+  seg <- seg[,c(2, 3, 1)]
+  marker_map <- rbind(marker_map, seg)
+
+}
+
+ab_mat$marker_name <- rownames(ab_mat)
+
+marker_out <- merge(marker_map, ab_mat, by = 'marker_name')
+
+marker_out <- marker_out[order(marker_out$linkage_group, marker_out$cM),] #order by linkage group and chromosome
+
+write.csv(marker_out, file = './data/Intermediate_File/Markers_Map.csv', row.names = FALSE, quote = FALSE) #write file out
+
+```
+
+#Confirm Map
+
+Extract tag positions using marker data, and BLAST the tags to the wheat genome.  See how many tags that are on the same linkage group relate to the reference genome.
+
+```{r extact_tags_linkage_group1}
+markers <- read.csv(file = './data/Intermediate_File/Markers_Map.csv', header = TRUE, stringsAsFactors = FALSE) #read in file 
+
+markers <- markers[markers$linkage_group == 1 , 1:3 ] #extract marker name from linkage group
+
+markers_to_align <- as.data.frame(markers$marker_name, stringsAsFactors = FALSE) #extract only marker tag
+
+colnames(markers_to_align)[1] <- 'fasta_tag' # #rename column
+
+markers_to_align$bp <- gsub('TP', '', markers_to_align$fasta_tag) #add base pair position
+
+markers_to_align$bp <- as.numeric(markers_to_align$bp) #convert to numeric
+
+markers_to_align <- markers_to_align[order(markers_to_align$bp), ]#order markers
+
+#format markers to match fasta sequence
+markers_to_align$fasta_tag <- paste('>', markers_to_align$fasta_tag, '_hit_64', sep = '')
+
+markers_to_align <- markers_to_align[, -2, drop = FALSE]
+
+write.table(markers_to_align, file = './data/Intermediate_File/Linkage_Group1_Markers.csv', quote = FALSE, row.names = FALSE, col.names = FALSE, sep = ',')
+```
+
+To extract fasta sequences use awk [https://stackoverflow.com/questions/49731386/extract-sequences-from-multifasta-file-by-id-in-file-using-awk](https://stackoverflow.com/questions/49731386/extract-sequences-from-multifasta-file-by-id-in-file-using-awk).
+
+awk 'NR==FNR{ids[$0];next} /^>/{f=($1 in ids)} f' Linkage_Group1_Markers.csv ../HapMap.fas.txt
+
+This only gets tags with full 64 base pair sequences 172 instead of 262.
+
+#Session Information
+
+```{r sessionInformation}
+sessionInfo()
+```

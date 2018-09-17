@@ -1,0 +1,156 @@
+---
+title: "GWAS Cattle"
+author: "Make this your own"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+#Objective
+
+Implement a GWAS on the data from Streit et al. (2013) "Using Genome-Wide Association Analysis to Characterize Environmental Sensitivity of Milk Traits in Dairy Cattle."  The data sets we are using are a sample of the original data sets, 12,559,327 phenotypic observations and 41,350 genotypic markers.  The full data set can be downloaded from the G3 website.
+
+The marker set has already been imputed and filtered; however markers have 2, 3, 4 coding pattern.  This is a huge data set, therefore, first fit a GWAS to a sample set of markers.  Then load the entire data set and identify a specific chromosome to assay based on your original results.
+
+Sire is the individual name.
+
+```{r setup, eval=TRUE}
+knitr::opts_knit$set(root.dir = '/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/GWAS_Cattle/')
+setwd('/Users/jcrain/Documents/Class/Genomic_Selection/Github/BecA/GWAS_Cattle/')
+options(digits = 10) #set options to include lots of digits
+#Git link
+#https://github.com/jcrain1/BecA
+
+#check the number of cores for computing
+require(parallel)
+detectCores()
+```
+
+#Load Subset of Data
+```{r load_subset}
+sample_markers <- read.table(file = './data/Original_Data/Sample_Cattle_Markers.txt', header = TRUE, stringsAsFactors = FALSE)
+
+phen <- read.csv(file = './data/Original_Data/Cattle_Summary.csv', header = TRUE, stringsAsFactors = FALSE)
+```
+
+#Check Phenotype and Genotype
+
+Format for rrBLUP.
+```{r check_format}
+phen$sire <-paste('Sire_', phen$sire, sep = '') #add sire name to sire
+
+phen <- phen[, c(5, 1:4, 6:7)] #organize phenotype by sire first column
+
+#check format
+all(phen$sire == colnames(sample_markers[,4:ncol(sample_markers)])) #check if correct order
+
+phen <- phen[match(colnames(sample_markers)[4:ncol(sample_markers)], phen$sire), ] #order data frame
+
+all(phen$sire == colnames(sample_markers[,4:ncol(sample_markers)]))
+
+
+#format sample markers
+sample_markers[, 4:ncol(sample_markers)] <- sample_markers[, 4:ncol(sample_markers)] - 3 #subtract 3 to make marker matrix
+
+```
+
+#Check for Population Structure
+```{r population_structure}
+#run and save results
+any(is.na(sample_markers)) #check if there is missing data
+
+geno_pca <- prcomp(t(sample_markers[, 4:ncol(sample_markers)]), scale. = T) #run PCA
+
+######## Individual Steps ############
+pca_markers <- sample_markers[, 4:ncol(sample_markers)] #marker selection
+all(pca_markers == sample_markers[, 4:ncol(sample_markers)]) #check that markers are the same
+pca_markers_t <- t(pca_markers) #transpose markers
+pca_out <- prcomp(pca_markers_t, scale. = TRUE) #run principal components
+####################################
+
+require(factoextra)
+fviz_eig(geno_pca) #scree plot with factoextra
+
+#extract components
+std_dev <- geno_pca$sdev
+
+#compute variance
+pr_var <- std_dev^2
+prop_varex <- pr_var/sum(pr_var) #compute proportion of the variance
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+screeplot(geno_pca, npcs = 25, type = 'line')
+
+```
+
+#GWAS whole genome
+```{r gwas_whole_genome}
+require(rrBLUP)
+gmat <- A.mat(t(sample_markers[, 4:ncol(sample_markers)])) #get realized relationship matrix
+
+rrout <- GWAS(phen[, 1:2], geno = sample_markers, K = gmat, min.MAF = 0.05, n.core=3, plot = TRUE, n.PC = 4)
+
+rrout[which.max(rrout$protein), ] #get chromosome to investigate
+
+```
+
+#Look at specific chromosome 14
+```{r get_specific_chromosome_14}
+all_markers <- read.table(file = file.choose(), header = FALSE, stringsAsFactors = FALSE) #load all data
+
+rownames(all_markers) <- paste('Sire_', all_markers$V1, sep = '') # add sire data to rownames
+
+
+all_markers <- all_markers[, -1] #remove marker row
+
+all_markers <- all_markers - 3 #make -1, 0, 1 matrix
+
+kmat <- A.mat(all_markers) #make realized relationship matrix with all markers
+
+#transpose for rows of markers
+all_markers <- t(all_markers) #transpose markers except for individual names columns
+
+#load map of markers
+map <- read.table(file = './data/Original_Data/Map_Bovine', header = TRUE, stringsAsFactors = FALSE) #load in map data
+
+map <- map[, c(2, 1, 3)] #set map up for GWAS
+
+#join map and all_markers
+all_markers <- cbind(map, all_markers) #join together
+
+#filter for chromosome 14
+marker14 <- all_markers[all_markers$chromosome == 14, ]
+
+#clean up
+rm(all_markers, gmat, map, rrout, sample_markers)
+
+```
+
+#Make GWAS on Chromosme 14
+```{r gwas14_QC}
+all(rownames(kmat) == phen$sire) #check that data is in correct order
+
+#Run GWAS model 
+rrout <- GWAS(phen[, c(1:2)], geno = marker14, K = kmat, min.MAF = 0.05, n.core=3, plot = TRUE, n.PC = 4) #model with no fixed covariates
+
+rrout <- rrout[order(-rrout$protein) ,] #orders log pvalue descending
+
+rrout$pvalue <- 10^(-rrout$protein) #transformed to p-values from -log(p)
+
+#Run GWAS model with fixed effect
+rrout <- GWAS(phen[, c(1:2, 7)], geno = marker14, K = kmat, min.MAF = 0.05, n.core=3, plot = TRUE, n.PC = 4, fixed = 'mother_of_sire') #model with fixed effect for mother takes about 6 hours on 3 cores
+
+
+```
+
+#Further work
+
+Look at other traits, look at different number of principal componetns, and/or set up a GS model for protein. 
+
+#Session Information
+```{r sessionInfo}
+sessionInfo()
+```
